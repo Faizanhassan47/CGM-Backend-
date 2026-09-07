@@ -63,6 +63,11 @@ public record ResetPasswordRequestDto(
     [Required, MinLength(6)] string NewPassword
 );
 
+public record ChangePasswordRequestDto(
+    [Required] string CurrentPassword,
+    [Required, MinLength(6)] string NewPassword
+);
+
 public record ResetPasswordResponseDto(
     bool Success,
     string Message

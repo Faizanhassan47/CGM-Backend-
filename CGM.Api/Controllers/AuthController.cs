@@ -344,6 +344,39 @@ public class AuthController : ControllerBase
     }
 
     [Authorize]
+    [HttpPost("change-password")]
+    public async Task<ActionResult<ResetPasswordResponseDto>> ChangePassword([FromBody] ChangePasswordRequestDto request)
+    {
+        var claim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!int.TryParse(claim, out var userId)) return Unauthorized();
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+        if (user is null || string.IsNullOrWhiteSpace(user.PasswordHash))
+            return BadRequest(new ResetPasswordResponseDto(false, "Password changes are unavailable for this account."));
+
+        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
+            return BadRequest(new ResetPasswordResponseDto(false, "Current password is incorrect."));
+
+        if (_passwordHasher.VerifyPassword(request.NewPassword, user.PasswordHash))
+            return BadRequest(new ResetPasswordResponseDto(false, "New password must be different from the current password."));
+
+        user.PasswordHash = _passwordHasher.HashPassword(request.NewPassword);
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // Keep the current mobile session usable, but revoke all refresh sessions.
+        // The user will sign in with the new password when the access token expires.
+        var sessions = await _db.RefreshTokens.Where(t => t.UserId == userId && !t.IsRevoked).ToListAsync();
+        foreach (var session in sessions)
+        {
+            session.IsRevoked = true;
+            session.RevokedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new ResetPasswordResponseDto(true, "Password changed successfully. Please sign in again."));
+    }
+
+    [Authorize]
     [HttpDelete("account")]
     public async Task<IActionResult> DeleteAccount()
     {
@@ -353,16 +386,27 @@ public class AuthController : ControllerBase
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) return NotFound();
 
-        var alerts = await _db.Alerts.Where(x => x.UserId == userId).ToListAsync();
-        var measurements = await _db.GlucoseMeasurements.Where(x => x.UserId == userId).ToListAsync();
-        var sensors = await _db.Sensors.Where(x => x.UserId == userId).ToListAsync();
-        var devices = await _db.CgmDevices.Where(x => x.UserId == userId).ToListAsync();
-        _db.Alerts.RemoveRange(alerts);
-        _db.GlucoseMeasurements.RemoveRange(measurements);
-        _db.Sensors.RemoveRange(sensors);
-        _db.CgmDevices.RemoveRange(devices);
-        _db.Users.Remove(user);
-        await _db.SaveChangesAsync();
+        // Delete explicitly in dependency order. Some deployed databases use
+        // restrictive foreign keys even where the EF model specifies cascade.
+        var email = user.Email;
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+
+            await _db.Alerts.Where(x => x.UserId == userId).ExecuteDeleteAsync();
+            await _db.GlucoseMeasurements.Where(x => x.UserId == userId).ExecuteDeleteAsync();
+            await _db.Sensors.Where(x => x.UserId == userId).ExecuteDeleteAsync();
+            await _db.CgmDevices.Where(x => x.UserId == userId).ExecuteDeleteAsync();
+            await _db.PatientProfiles.Where(x => x.UserId == userId).ExecuteDeleteAsync();
+            await _db.PasswordResetTokens
+                .Where(x => x.UserId == userId || x.Email == email)
+                .ExecuteDeleteAsync();
+            await _db.RefreshTokens.Where(x => x.UserId == userId).ExecuteDeleteAsync();
+            await _db.Users.Where(x => x.Id == userId).ExecuteDeleteAsync();
+
+            await transaction.CommitAsync();
+        });
         return NoContent();
     }
 }
