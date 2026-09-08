@@ -50,4 +50,5 @@ public class AlertEntity
 
     [ForeignKey(nameof(MeasurementId))]
     public virtual GlucoseMeasurementEntity? Measurement { get; set; }
+    public virtual ICollection<AlertRecipientEntity> Recipients { get; set; } = new List<AlertRecipientEntity>();
 }

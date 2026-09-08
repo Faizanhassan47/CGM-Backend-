@@ -21,17 +21,20 @@ public class AuthController : ControllerBase
     private readonly IPasswordHasher _passwordHasher;
     private readonly ITokenService _tokenService;
     private readonly IEmailService _emailService;
+    private readonly IReferralCodeService _referralCodes;
 
     public AuthController(
         CgmDbContext db,
         IPasswordHasher passwordHasher,
         ITokenService tokenService,
-        IEmailService emailService)
+        IEmailService emailService,
+        IReferralCodeService referralCodes)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _tokenService = tokenService;
         _emailService = emailService;
+        _referralCodes = referralCodes;
     }
 
     [HttpPost("register")]
@@ -52,6 +55,7 @@ public class AuthController : ControllerBase
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
+        user.ReferralCode = await _referralCodes.GenerateUniqueAsync(HttpContext.RequestAborted);
 
         var profile = new PatientProfileEntity
         {
@@ -67,7 +71,14 @@ public class AuthController : ControllerBase
         user.Profile = profile;
 
         _db.Users.Add(user);
-        await _db.SaveChangesAsync();
+        for (var attempt = 0; ; attempt++)
+        {
+            try { await _db.SaveChangesAsync(); break; }
+            catch (DbUpdateException ex) when (attempt < 4 && ex.InnerException?.Message.Contains("UX_Users_ReferralCode", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                user.ReferralCode = await _referralCodes.GenerateUniqueAsync(HttpContext.RequestAborted);
+            }
+        }
 
         // Send Welcome Email asynchronously
         _ = Task.Run(async () =>
@@ -99,7 +110,8 @@ public class AuthController : ControllerBase
             user.EmailVerified,
             profile.ProfileCompleted,
             profile.PreferredGlucoseUnit,
-            user.ProfilePictureUrl
+            user.ProfilePictureUrl,
+            user.ReferralCode
         );
 
         return Ok(new AuthResponseDto(true, "Registration successful.", accessToken, rawRefreshToken, expiresAt, userDto));
@@ -145,7 +157,8 @@ public class AuthController : ControllerBase
             user.EmailVerified,
             user.Profile?.ProfileCompleted ?? false,
             user.Profile?.PreferredGlucoseUnit ?? "mg/dL",
-            user.ProfilePictureUrl
+            user.ProfilePictureUrl,
+            user.ReferralCode
         );
 
         return Ok(new AuthResponseDto(true, "Login successful.", accessToken, rawRefreshToken, expiresAt, userDto));
@@ -323,7 +336,8 @@ public class AuthController : ControllerBase
             user.EmailVerified,
             user.Profile?.ProfileCompleted ?? false,
             user.Profile?.PreferredGlucoseUnit ?? "mg/dL",
-            user.ProfilePictureUrl
+            user.ProfilePictureUrl,
+            user.ReferralCode
         );
 
         return Ok(new AuthResponseDto(true, "Token refreshed.", accessToken, newRawRefreshToken, expiresAt, userDto));

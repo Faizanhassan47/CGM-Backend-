@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using CGM.Api.Data;
 using CGM.Api.Models.Dtos;
 using CGM.Api.Models.Entities;
+using CGM.Api.Services;
 
 namespace CGM.Api.Controllers;
 
@@ -14,10 +15,12 @@ namespace CGM.Api.Controllers;
 public class GlucoseController : ControllerBase
 {
     private readonly CgmDbContext _db;
+    private readonly IGlucoseAlertService _alerts;
 
-    public GlucoseController(CgmDbContext db)
+    public GlucoseController(CgmDbContext db, IGlucoseAlertService alerts)
     {
         _db = db;
+        _alerts = alerts;
     }
 
     private int GetCurrentUserId()
@@ -65,43 +68,7 @@ public class GlucoseController : ControllerBase
         sensor.LatestSequenceNumber = dto.SequenceNumber;
         sensor.LastReadingAt = dto.MeasurementTime;
 
-        // Automatic Alert trigger for Low / High Glucose
-        if (dto.GlucoseValue <= 70)
-        {
-            _db.Alerts.Add(new AlertEntity
-            {
-                UserId = userId,
-                SensorId = dto.SensorId,
-                Measurement = measurement,
-                AlertType = "LowGlucose",
-                Title = "Low Glucose Alert",
-                Message = $"Glucose reading dropped to {dto.GlucoseValue} {dto.GlucoseUnit}.",
-                GlucoseValue = dto.GlucoseValue,
-                GlucoseUnit = dto.GlucoseUnit,
-                Severity = "Critical",
-                AlertTime = dto.MeasurementTime,
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow
-            });
-        }
-        else if (dto.GlucoseValue >= 180)
-        {
-            _db.Alerts.Add(new AlertEntity
-            {
-                UserId = userId,
-                SensorId = dto.SensorId,
-                Measurement = measurement,
-                AlertType = "HighGlucose",
-                Title = "High Glucose Alert",
-                Message = $"Glucose reading elevated to {dto.GlucoseValue} {dto.GlucoseUnit}.",
-                GlucoseValue = dto.GlucoseValue,
-                GlucoseUnit = dto.GlucoseUnit,
-                Severity = "Warning",
-                AlertTime = dto.MeasurementTime,
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow
-            });
-        }
+        await _alerts.CreateIfAbnormalAsync(measurement, HttpContext.RequestAborted);
 
         await _db.SaveChangesAsync();
         return Ok(new { message = "Measurement saved successfully.", id = measurement.Id, sequenceNumber = dto.SequenceNumber });
@@ -144,6 +111,8 @@ public class GlucoseController : ControllerBase
         if (newEntities.Any())
         {
             _db.GlucoseMeasurements.AddRange(newEntities);
+            foreach (var entity in newEntities)
+                await _alerts.CreateIfAbnormalAsync(entity, HttpContext.RequestAborted);
             var maxSN = newEntities.Max(e => e.SequenceNumber);
 
             if (ownedSensor.LatestSequenceNumber == null || maxSN > ownedSensor.LatestSequenceNumber)

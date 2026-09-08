@@ -8,6 +8,7 @@ public interface IEmailService
 {
     Task<bool> SendWelcomeEmailAsync(string toEmail, string fullName);
     Task<bool> SendPasswordResetEmailAsync(string toEmail, string fullName, string resetToken, string otpCode, DateTime expiresAt);
+    Task<bool> SendGlucoseAlertEmailAsync(string toEmail, string recipientName, string patientName, decimal glucoseValue, string unit, decimal threshold, bool isLow);
 }
 
 public class EmailService : IEmailService
@@ -142,6 +143,16 @@ If you did not request a password reset, you can safely ignore this email. Your 
 </html>";
 
         return await SendEmailAsync(toEmail, fullName, subject, htmlBody, textBody);
+    }
+
+    public Task<bool> SendGlucoseAlertEmailAsync(string toEmail, string recipientName, string patientName, decimal glucoseValue, string unit, decimal threshold, bool isLow)
+    {
+        var kind = isLow ? "Low" : "High";
+        var direction = isLow ? "below" : "above";
+        var subject = $"{kind} Glucose Alert - {patientName}";
+        var text = $"{kind} Glucose Alert\n\n{patientName}'s glucose is {glucoseValue:0.##} {unit}, {direction} the family alert threshold of {threshold:0.##} {unit}.\n\nOpen GlucoTrack for details.";
+        var html = $"<div style='font-family:Arial;max-width:560px;padding:24px'><h2>{kind} Glucose Alert</h2><p>Hello {System.Net.WebUtility.HtmlEncode(recipientName)},</p><p><strong>{System.Net.WebUtility.HtmlEncode(patientName)}</strong>'s glucose is <strong>{glucoseValue:0.##} {unit}</strong>, {direction} the family alert threshold of {threshold:0.##} {unit}.</p><p>Open GlucoTrack for details.</p></div>";
+        return SendEmailAsync(toEmail, recipientName, subject, html, text);
     }
 
     private async Task<bool> SendEmailAsync(string toEmail, string toName, string subject, string bodyHtml, string? textBody = null)

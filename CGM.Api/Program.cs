@@ -37,6 +37,8 @@ builder.Services.AddDbContext<CgmDbContext>(options =>
 // 3. Register Custom Services
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IReferralCodeService, ReferralCodeService>();
+builder.Services.AddScoped<IGlucoseAlertService, GlucoseAlertService>();
 builder.Services.AddScoped<CGM.Api.Services.Email.IEmailService, CGM.Api.Services.Email.EmailService>();
 
 // 4. Configure JWT Authentication

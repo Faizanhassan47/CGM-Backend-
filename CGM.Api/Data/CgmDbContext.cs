@@ -17,6 +17,9 @@ public class CgmDbContext : DbContext
     public DbSet<AlertEntity> Alerts => Set<AlertEntity>();
     public DbSet<RefreshTokenEntity> RefreshTokens => Set<RefreshTokenEntity>();
     public DbSet<PasswordResetTokenEntity> PasswordResetTokens => Set<PasswordResetTokenEntity>();
+    public DbSet<FamilyEntity> Families => Set<FamilyEntity>();
+    public DbSet<FamilyMemberEntity> FamilyMembers => Set<FamilyMemberEntity>();
+    public DbSet<AlertRecipientEntity> AlertRecipients => Set<AlertRecipientEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +32,7 @@ public class CgmDbContext : DbContext
             entity.HasIndex(e => e.Email).IsUnique().HasDatabaseName("UX_Users_Email");
             entity.HasIndex(e => e.GoogleSubjectId).IsUnique().HasFilter("[GoogleSubjectId] IS NOT NULL").HasDatabaseName("UX_Users_GoogleSubjectId");
             entity.HasIndex(e => e.AppleSubjectId).IsUnique().HasFilter("[AppleSubjectId] IS NOT NULL").HasDatabaseName("UX_Users_AppleSubjectId");
+            entity.HasIndex(e => e.ReferralCode).IsUnique().HasFilter("[ReferralCode] IS NOT NULL").HasDatabaseName("UX_Users_ReferralCode");
         });
 
         // 2. PatientProfile
@@ -141,6 +145,28 @@ public class CgmDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FamilyEntity>(entity =>
+        {
+            entity.HasIndex(e => e.OwnerUserId).IsUnique().HasFilter("[IsActive] = 1").HasDatabaseName("UX_Families_ActiveOwner");
+            entity.HasOne(e => e.OwnerUser).WithMany().HasForeignKey(e => e.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FamilyMemberEntity>(entity =>
+        {
+            entity.HasIndex(e => new { e.FamilyId, e.UserId }).IsUnique().HasFilter("[UserId] IS NOT NULL").HasDatabaseName("UX_FamilyMembers_Family_User");
+            entity.HasIndex(e => e.JoinedByReferralCode).HasDatabaseName("IX_FamilyMembers_JoinedByReferralCode");
+            entity.HasOne(e => e.Family).WithMany(f => f.Members).HasForeignKey(e => e.FamilyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.User).WithMany(u => u.FamilyMemberships).HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AlertRecipientEntity>(entity =>
+        {
+            entity.HasIndex(e => new { e.AlertId, e.UserId }).IsUnique().HasDatabaseName("UX_AlertRecipients_Alert_User");
+            entity.HasIndex(e => new { e.UserId, e.IsRead }).HasDatabaseName("IX_AlertRecipients_User_Read");
+            entity.HasOne(e => e.Alert).WithMany(a => a.Recipients).HasForeignKey(e => e.AlertId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.User).WithMany(u => u.AlertRecipients).HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

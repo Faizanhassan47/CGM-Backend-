@@ -26,25 +26,37 @@ public class AlertsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<AlertEntity>>> GetAlerts([FromQuery] string? severity, [FromQuery] bool? unreadOnly)
+    public async Task<IActionResult> GetAlerts([FromQuery] string? severity, [FromQuery] bool? unreadOnly)
     {
         var userId = GetCurrentUserId();
-        var query = _db.Alerts.Where(a => a.UserId == userId);
+        var query = _db.AlertRecipients.Where(r => r.UserId == userId).Select(r => r);
 
         if (!string.IsNullOrEmpty(severity))
         {
-            query = query.Where(a => a.Severity == severity);
+            query = query.Where(r => r.Alert.Severity == severity);
         }
 
         if (unreadOnly == true)
         {
-            query = query.Where(a => !a.IsRead);
+            query = query.Where(r => !r.IsRead);
         }
 
         var alerts = await query
-            .OrderByDescending(a => a.AlertTime)
+            .OrderByDescending(r => r.Alert.AlertTime)
             .Take(50)
-            .ToListAsync();
+            .Select(r => new
+            {
+                id = r.Alert.Id.ToString(),
+                category = r.Alert.AlertType == "HighGlucose" ? 1 : 0,
+                title = r.Alert.Title,
+                message = r.Alert.Message,
+                timestamp = r.Alert.AlertTime,
+                glucoseValue = r.Alert.GlucoseValue,
+                unit = r.Alert.GlucoseUnit == "mmol/L" ? 1 : 0,
+                isRead = r.IsRead,
+                isCritical = r.Alert.Severity == "Critical",
+                patientUserId = r.Alert.UserId
+            }).ToListAsync();
 
         return Ok(alerts);
     }
@@ -53,11 +65,11 @@ public class AlertsController : ControllerBase
     public async Task<IActionResult> MarkAsRead(long id)
     {
         var userId = GetCurrentUserId();
-        var alert = await _db.Alerts.FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId);
-        if (alert == null) return NotFound();
+        var recipient = await _db.AlertRecipients.FirstOrDefaultAsync(r => r.AlertId == id && r.UserId == userId);
+        if (recipient == null) return NotFound();
 
-        alert.IsRead = true;
-        alert.ReadAt = DateTime.UtcNow;
+        recipient.IsRead = true;
+        recipient.ReadAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
         return Ok(new { message = "Alert marked as read." });

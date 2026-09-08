@@ -36,6 +36,9 @@ public class User
     public bool EmailVerified { get; set; } = false;
     public bool IsActive { get; set; } = true;
 
+    [MaxLength(12)]
+    public string? ReferralCode { get; set; }
+
     public DateTime? LastLoginAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
@@ -47,4 +50,6 @@ public class User
     public virtual ICollection<GlucoseMeasurementEntity> Measurements { get; set; } = new List<GlucoseMeasurementEntity>();
     public virtual ICollection<AlertEntity> Alerts { get; set; } = new List<AlertEntity>();
     public virtual ICollection<RefreshTokenEntity> RefreshTokens { get; set; } = new List<RefreshTokenEntity>();
+    public virtual ICollection<FamilyMemberEntity> FamilyMemberships { get; set; } = new List<FamilyMemberEntity>();
+    public virtual ICollection<AlertRecipientEntity> AlertRecipients { get; set; } = new List<AlertRecipientEntity>();
 }

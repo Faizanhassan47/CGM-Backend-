@@ -45,7 +45,8 @@ public record UserDto(
     bool EmailVerified,
     bool ProfileCompleted,
     string PreferredGlucoseUnit,
-    string? ProfilePictureUrl
+    string? ProfilePictureUrl,
+    string? ReferralCode
 );
 
 public record ForgotPasswordRequestDto(
